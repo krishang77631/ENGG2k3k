@@ -8,8 +8,8 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "C:/Users/krish/OneDrive/Documents/PlatformIO/Projects/ENGG3000/include",
-                "C:/Users/krish/OneDrive/Documents/PlatformIO/Projects/ENGG3000/src",
+                "C:/Users/krish/OneDrive/Desktop/ENG2000/ENGG2k3k/include",
+                "C:/Users/krish/OneDrive/Desktop/ENG2000/ENGG2k3k/src",
                 "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
                 "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/FS/src",
                 "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
@@ -244,8 +244,8 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "C:/Users/krish/OneDrive/Documents/PlatformIO/Projects/ENGG3000/include",
-                    "C:/Users/krish/OneDrive/Documents/PlatformIO/Projects/ENGG3000/src",
+                    "C:/Users/krish/OneDrive/Desktop/ENG2000/ENGG2k3k/include",
+                    "C:/Users/krish/OneDrive/Desktop/ENG2000/ENGG2k3k/src",
                     "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
                     "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/FS/src",
                     "C:/Users/krish/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
