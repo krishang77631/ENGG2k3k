@@ -1,0 +1,36 @@
+
+// Simple distance measurement -> Serial Monitor
+
+const int TRIG_PIN = 19;   // Trigger pin
+const int ECHO_PIN = 16;  // Echo pin
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+}
+
+void loop() {
+  // Send a 10us pulse on TRIG
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Measure echo pulse duration (µs)
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout (~5m range)
+
+  // Convert to distance (cm)
+  float distance = duration / 58.0;  
+
+  if (duration == 0) {
+    Serial.println("Out of range / No echo");
+  } else {
+    Serial.print("Distance: ");
+    Serial.print(distance, 1);  // one decimal place
+    Serial.println(" cm");
+  }
+
+  delay(500); // read every 0.5s
+}
