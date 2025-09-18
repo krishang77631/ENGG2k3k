@@ -2,7 +2,18 @@
 #include "WebServer.h"
 #include "AsyncUDP.h"
 
-const char *ssid = "ESP32_Bridge";
+// ===== Motor Control Pins =====
+int motor1Pin1 = 27; // IN1
+int motor1Pin2 = 26; // IN2
+int enable1Pin = 14; // ENA (PWM)
+
+// PWM properties (ESP32)
+const int freq = 30000;        
+const int pwmChannel = 0;      
+const int resolution = 8;      
+
+// ===== WiFi / Server =====
+const char *ssid = "ESP32_Bridge_SYS30";
 const char *password = "12345678";
 
 WebServer server(80);
@@ -40,6 +51,28 @@ String htmlPage() {
   return page;
 }
 
+// === Motor Control Helpers ===
+void motorOpen() {
+  digitalWrite(motor1Pin1, HIGH);
+  digitalWrite(motor1Pin2, LOW);
+  ledcWrite(pwmChannel, 255); // full speed
+  Serial.println("Motor: Opening bridge");
+}
+
+void motorClose() {
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, HIGH);
+  ledcWrite(pwmChannel, 255);
+  Serial.println("Motor: Closing bridge");
+}
+
+void motorStop() {
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  ledcWrite(pwmChannel, 0);
+  Serial.println("Motor: Stopped");
+}
+
 // === Handlers ===
 void handleRoot() {
   server.send(200, "text/html", htmlPage());
@@ -66,18 +99,21 @@ void setupRoutes() {
 
   server.on("/open", []() {
     setBridgeState("Opening");
+    motorOpen();
     server.sendHeader("Location", "/");
     server.send(303);
   });
 
   server.on("/close", []() {
     setBridgeState("Closing");
+    motorClose();
     server.sendHeader("Location", "/");
     server.send(303);
   });
 
   server.on("/stop", []() {
     setBridgeState("Stopped");
+    motorStop();
     server.sendHeader("Location", "/");
     server.send(303);
   });
@@ -103,6 +139,13 @@ void setupRoutes() {
 
 void setup() {
   Serial.begin(115200);
+
+  // Motor setup
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+  ledcSetup(pwmChannel, freq, resolution);
+  ledcAttachPin(enable1Pin, pwmChannel);
+  motorStop(); // ensure stopped at start
 
   // Start AP mode
   WiFi.mode(WIFI_AP);
