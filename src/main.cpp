@@ -1,73 +1,99 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-// ===== WiFi Setup =====
-const char* ssid = "ESP32_Bridge";
-const char* password = "12345678";
-
+/* =========================
+   Wi-Fi / Web Server
+   ========================= */
+const char* ssid     = "ESP32_BridgeG30";
+const char* password = "LeSyedJames";
 WebServer server(80);
 
-// ===== Motor Pins =====
-int motor1Pin1 = 27; // IN1
-int motor1Pin2 = 26; // IN2
-int enable1Pin = 14; // ENA (PWM)
-const int pwmChannel = 0;
-const int freq = 30000;
-const int resolution = 8;
+/* =========================
+   Motor (L298N)
+   ========================= */
+const int motor1Pin1 = 27;   // IN1
+const int motor1Pin2 = 26;   // IN2
+const int enable1Pin = 14;   // ENA (PWM)
 
-// ===== Boat Sensors (ultrasonic) =====
-int boatTriggerPins[2] = {2, 33};
-int boatEchoPins[2]    = {4, 25};
+const int pwmChannel  = 0;
+const int freq        = 30000;
+const int resolution  = 8;
+
+/* =========================
+   Encoder (FIT0186)
+   ========================= */
+// FIT0186 gearbox encoder: ~700 pulses per output-shaft revolution (A rising)
+#define ENCODEROUTPUT 700
+const int ENCODER_PIN = 22;  // Channel A wire from encoder
+
+volatile unsigned long encoderValue = 0;  // pulses counted in current window
+void IRAM_ATTR onEncoderRise() { encoderValue++; }
+
+// 1-second window
+unsigned long prevMillis = 0;
+const unsigned long intervalMs = 1000;
+
+/* =========================
+   Boat Sensors (ultrasonic)
+   ========================= */
+int  boatTriggerPins[2] = {2, 33};
+int  boatEchoPins[2]    = {4, 25};
 const long detectDistance = 10; // cm
 
-// ===== Boat Traffic Lights (1 module per side) =====
+/* =========================
+   Boat Traffic Lights (modules per side)
+   ========================= */
 int boatRedPins[2]    = {19, 32};
 int boatYellowPins[2] = {18, 13};
 int boatGreenPins[2]  = {5, 12};
 
-// ===== System States =====
-String bridgeState = "Closed";      // Closed, Opening, Open, Closing
-String boatSensorState = "Clear";   // Detected, Clear
-String systemStatus = "Ready";      // Ready, Moving
+/* =========================
+   System State
+   ========================= */
+String bridgeState      = "Closed";   // Closed, Opening, Open, Closing
+String boatSensorState  = "Clear";    // Detected, Clear
+String systemStatus     = "Ready";    // Ready, Moving
 
-// ===== Helper Functions =====
+/* =========================
+   Helpers
+   ========================= */
 void setBoatLights(bool red, bool yellow, bool green) {
   for (int i = 0; i < 2; i++) {
-    digitalWrite(boatRedPins[i], red);
+    digitalWrite(boatRedPins[i],    red);
     digitalWrite(boatYellowPins[i], yellow);
-    digitalWrite(boatGreenPins[i], green);
+    digitalWrite(boatGreenPins[i],  green);
   }
 }
 
 void motorOpen() {
   systemStatus = "Moving";
-  bridgeState = "Opening";
-  setBoatLights(false, true, false); // yellow
+  bridgeState  = "Opening";
+  setBoatLights(false, true, false);
   digitalWrite(motor1Pin1, HIGH);
   digitalWrite(motor1Pin2, LOW);
   ledcWrite(pwmChannel, 255);
-  delay(5000); // 5 seconds motor
+  delay(5000);
   digitalWrite(motor1Pin1, LOW);
   digitalWrite(motor1Pin2, LOW);
   ledcWrite(pwmChannel, 0);
-  bridgeState = "Open";
-  setBoatLights(false, false, true); // green
+  bridgeState  = "Open";
+  setBoatLights(false, false, true);
   systemStatus = "Ready";
 }
 
 void motorClose() {
   systemStatus = "Moving";
-  bridgeState = "Closing";
-  setBoatLights(false, true, false); // yellow
+  bridgeState  = "Closing";
+  setBoatLights(false, true, false);
   digitalWrite(motor1Pin1, LOW);
   digitalWrite(motor1Pin2, HIGH);
   ledcWrite(pwmChannel, 255);
-  delay(5000); // 5 seconds motor
+  delay(5000);
   digitalWrite(motor1Pin1, LOW);
   digitalWrite(motor1Pin2, LOW);
   ledcWrite(pwmChannel, 0);
-  bridgeState = "Closed";
-  setBoatLights(true, false, false); // red
+  bridgeState  = "Closed";
+  setBoatLights(true, false, false);
   systemStatus = "Ready";
 }
 
@@ -78,13 +104,15 @@ long readBoatDistance(int triggerPin, int echoPin) {
   delayMicroseconds(10);
   digitalWrite(triggerPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH, 30000); // timeout 30ms
-  if (duration == 0) return -1; // no echo
-  long distance = duration * 0.034 / 2; // cm
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  if (duration == 0) return -1;
+  long distance = duration * 0.034f / 2.0f;
   return distance;
 }
 
-// ===== Web UI =====
+/* =========================
+   Web UI
+   ========================= */
 String htmlPage() {
   String page = "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Bridge Control Panel</title>";
   page += "<style>body{font-family:Arial;text-align:center;background:#f5f5f5;}button{padding:10px 20px;margin:5px;font-size:16px;} .open{background:green;color:white;}.close{background:red;color:white;}.stop{background:orange;color:white;}</style></head><body>";
@@ -115,11 +143,17 @@ void setupRoutes() {
   server.on("/boatPassed", []() { boatSensorState = "Clear"; server.sendHeader("Location","/"); server.send(303); });
 }
 
-// ===== Setup =====
+/* =========================
+   Setup
+   ========================= */
 void setup() {
   Serial.begin(115200);
 
-  // Motor pins
+  // Encoder (Channel A only)
+  pinMode(ENCODER_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), onEncoderRise, RISING);
+
+  // Motor setup
   pinMode(motor1Pin1, OUTPUT);
   pinMode(motor1Pin2, OUTPUT);
   pinMode(enable1Pin, OUTPUT);
@@ -131,8 +165,8 @@ void setup() {
     pinMode(boatRedPins[i], OUTPUT);
     pinMode(boatYellowPins[i], OUTPUT);
     pinMode(boatGreenPins[i], OUTPUT);
-    setBoatLights(true, false, false); // start red
   }
+  setBoatLights(true, false, false);
 
   // Boat sensors
   for (int i = 0; i < 2; i++) {
@@ -140,21 +174,42 @@ void setup() {
     pinMode(boatEchoPins[i], INPUT);
   }
 
-  // Start WiFi AP
+  // Wi-Fi / HTTP
   WiFi.softAP(ssid, password);
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
-
   setupRoutes();
   server.begin();
   Serial.println("HTTP server started");
+
+  encoderValue = 0;
+  prevMillis = millis();
 }
 
-// ===== Loop =====
+/* =========================
+   Loop
+   ========================= */
 void loop() {
   server.handleClient();
 
-  // Automatic sensor-driven bridge
+  // --- RPM calculation every 1s ---
+  unsigned long now = millis();
+  if (now - prevMillis >= intervalMs) {
+    prevMillis = now;
+
+    unsigned long pulses = encoderValue;
+    encoderValue = 0;
+
+    float rpm = (float)pulses * 60.0f / ENCODEROUTPUT;
+    Serial.print(pulses);
+    Serial.print(" pulses / ");
+    Serial.print(ENCODEROUTPUT);
+    Serial.print(" PPR x 60 = ");
+    Serial.print(rpm, 1);
+    Serial.println(" RPM");
+  }
+
+  // --- Automatic boat detection ---
   bool boatDetected = false;
   for (int i = 0; i < 2; i++) {
     long dist = readBoatDistance(boatTriggerPins[i], boatEchoPins[i]);
@@ -167,7 +222,7 @@ void loop() {
   if (boatDetected && bridgeState == "Closed" && systemStatus == "Ready") {
     boatSensorState = "Detected";
     motorOpen();
-    delay(2000); // short pause before closing
+    delay(5000);
     motorClose();
     boatSensorState = "Clear";
   }
