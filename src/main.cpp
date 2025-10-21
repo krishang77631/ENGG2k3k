@@ -22,14 +22,12 @@ const int resolution  = 8;
 /* =========================
    Encoder (FIT0186)
    ========================= */
-// FIT0186 gearbox encoder: ~700 pulses per output-shaft revolution (A rising)
 #define ENCODEROUTPUT 700
-const int ENCODER_PIN = 22;  // Channel A wire from encoder
+const int ENCODER_PIN = 22;
 
-volatile unsigned long encoderValue = 0;  // pulses counted in current window
+volatile unsigned long encoderValue = 0;
 void IRAM_ATTR onEncoderRise() { encoderValue++; }
 
-// 1-second window
 unsigned long prevMillis = 0;
 const unsigned long intervalMs = 1000;
 
@@ -41,25 +39,24 @@ int  boatEchoPins[2]    = {4, 25};
 const long detectDistance = 10; // cm
 
 /* =========================
-   Boat Traffic Lights (modules per side)
+   Traffic Lights
    ========================= */
-int boatRedPins[2]    = {19};
+// NOTE: currently only 1 module per side wired → iterate 1 side safely.
+// If you later add the second module, set NUM_SIDES = 2 and fill the second pin values.
+const int NUM_SIDES = 1;
+
+int boatRedPins[2]    = {19}; // second slot currently uninitialised
 int boatYellowPins[2] = {18};
 int boatGreenPins[2]  = {5};
 
-/* =========================
-   Road Traffic Lights (modules per side: RED/YELLOW/GREEN)
-   =========================
-   Give the ROAD lights their own pins so they can act opposite to the BOAT lights.
-*/
 int roadRedPins[2]    = {32};
 int roadYellowPins[2] = {13};
-int roadGreenPins[2]  = {12}; // If RX0 causes issues, change '3' to another spare output
+int roadGreenPins[2]  = {12};
 
 /* =========================
    System State
    ========================= */
-String bridgeState      = "Closed";   // Closed, Opening, Open, Closing
+String bridgeState      = "Closed";   // Closed, Opening, Open, Closing, Stopped
 String boatSensorState  = "Clear";    // Detected, Clear
 String systemStatus     = "Ready";    // Ready, Moving, Stopped
 
@@ -67,7 +64,7 @@ String systemStatus     = "Ready";    // Ready, Moving, Stopped
    Helpers
    ========================= */
 void setBoatLights(bool red, bool yellow, bool green) {
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < NUM_SIDES; i++) {
     digitalWrite(boatRedPins[i],    red);
     digitalWrite(boatYellowPins[i], yellow);
     digitalWrite(boatGreenPins[i],  green);
@@ -75,7 +72,7 @@ void setBoatLights(bool red, bool yellow, bool green) {
 }
 
 void setRoadLights(bool red, bool yellow, bool green) {
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < NUM_SIDES; i++) {
     digitalWrite(roadRedPins[i],    red);
     digitalWrite(roadYellowPins[i], yellow);
     digitalWrite(roadGreenPins[i],  green);
@@ -84,9 +81,6 @@ void setRoadLights(bool red, bool yellow, bool green) {
 
 /* =========================
    Motion & State -> Lights (Opposite logic)
-   - Opening/Closing: Boat = YELLOW, Road = RED
-   - Open:            Boat = GREEN,  Road = RED
-   - Closed:          Boat = RED,    Road = GREEN
    ========================= */
 void motorOpen() {
   systemStatus = "Moving";
@@ -144,53 +138,105 @@ long readBoatDistance(int triggerPin, int echoPin) {
 }
 
 /* =========================
-   Web UI
+   PROGMEM HTML (no page reloads)
    ========================= */
-String htmlPage() {
-  String page = "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Bridge Control Panel</title>";
-  page += "<style>body{font-family:Arial;text-align:center;background:#f5f5f5;}button{padding:10px 20px;margin:5px;font-size:16px;} .open{background:green;color:white;}.close{background:red;color:white;}.stop{background:orange;color:white;}</style></head><body>";
-  page += "<h1>Bridge Control Panel</h1>";
-  page += "<h3>Status</h3>";
-  page += "<p>Bridge State: <b>" + bridgeState + "</b></p>";
-  page += "<p>Boat Sensor: <b>" + boatSensorState + "</b></p>";
-  page += "<p>System Status: <b>" + systemStatus + "</b></p>";
-  // Indicators from current outputs
-  page += "<p>Boat Lights: <b>" 
-       + String((digitalRead(boatRedPins[0]) || digitalRead(boatRedPins[1])) ? "RED" :
-                (digitalRead(boatYellowPins[0]) || digitalRead(boatYellowPins[1])) ? "YELLOW" : "GREEN")
-       + "</b></p>";
-  page += "<p>Road Lights: <b>" 
-       + String((digitalRead(roadRedPins[0]) || digitalRead(roadRedPins[1])) ? "RED" :
-                (digitalRead(roadYellowPins[0]) || digitalRead(roadYellowPins[1])) ? "YELLOW" : "GREEN")
-       + "</b></p>";
-  page += "<hr><h3>Bridge Controls</h3>";
-  page += "<button class='open' onclick=\"location.href='/open'\">Open Bridge</button>";
-  page += "<button class='stop' onclick=\"location.href='/stop'\">Stop</button>";
-  page += "<button class='close' onclick=\"location.href='/close'\">Close Bridge</button>";
-  page += "<hr><h3>Sensor Overrides</h3>";
-  page += "<button onclick=\"location.href='/boatDetected'\">Trigger Boat Detected</button>";
-  page += "<button onclick=\"location.href='/boatPassed'\">Trigger Boat Passed</button>";
-  page += "</body></html>";
-  return page;
+const char HTML_PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bridge Control Panel</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background:#f7f7f7; }
+    #bridge-state { font-size: 22px; margin-bottom: 20px; font-weight: bold; }
+    #bridge-visual { width: 180px; height: 180px; background: #ccc; border-radius: 10px; margin: 0 auto 30px;
+                     display:flex; align-items:center; justify-content:center; font-size:18px; color:#333;
+                     box-shadow: 0 0 10px rgba(0,0,0,0.2); }
+    button { border: none; color: white; font-size: 16px; border-radius: 20px; padding: 15px 40px; cursor: pointer; margin: 10px; }
+    #toggle-btn { background-color: #79e35c; }
+    #stop-btn { background-color: #ff4c4c; }
+  </style>
+</head>
+<body>
+  <h2 id="bridge-state">Bridge State: Loading...</h2>
+  <div id="bridge-visual">Bridge</div>
+  <button id="toggle-btn">Raise/Lower Bridge</button>
+  <button id="stop-btn">Emergency Stop</button>
+
+  <script>
+    async function updateState() {
+      try {
+        const res = await fetch('/state');
+        const state = await res.text();
+        document.getElementById('bridge-state').textContent = 'Bridge State: ' + state;
+        const box = document.getElementById('bridge-visual');
+        if (state.includes('Open'))      box.style.backgroundColor = '#6ee86e';
+        else if (state.includes('Closed')) box.style.backgroundColor = '#f36a6a';
+        else if (state.includes('Opening') || state.includes('Closing') || state.includes('Moving'))
+          box.style.backgroundColor = '#ffd966';
+        else                              box.style.backgroundColor = '#ccc';
+      } catch (e) { console.error(e); }
+    }
+
+    document.getElementById("toggle-btn").onclick = async () => {
+      await fetch("/toggle");
+      updateState();
+    };
+
+    document.getElementById("stop-btn").onclick = async () => {
+      await fetch("/stop");
+      updateState();
+    };
+
+    setInterval(updateState, 2000);
+    updateState();
+  </script>
+</body>
+</html>
+)rawliteral";
+
+/* =========================
+   Web Routes
+   ========================= */
+void handleRoot() { server.send_P(200, "text/html", HTML_PAGE); }
+
+void handleState() {
+  server.send(200, "text/plain", bridgeState);
 }
 
-void handleRoot() { server.send(200, "text/html", htmlPage()); }
+void handleToggle() {
+  if (bridgeState == "Closed" && systemStatus == "Ready") {
+    motorOpen();
+  } else if (bridgeState == "Open" && systemStatus == "Ready") {
+    motorClose();
+  }
+  server.send(200, "text/plain", "OK");
+}
+
+void handleStop() {
+  // Immediately stop motor output for safety
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  ledcWrite(pwmChannel, 0);
+  systemStatus = "Stopped";
+  bridgeState  = "Stopped";
+  // Make all lights RED as a clear fail-safe
+  setBoatLights(true,  false, false);
+  setRoadLights(true,  false, false);
+  server.send(200, "text/plain", "STOPPED");
+}
 
 void setupRoutes() {
   server.on("/", handleRoot);
-  server.on("/open", []() { motorOpen(); server.sendHeader("Location","/"); server.send(303); });
-  server.on("/close", []() { motorClose(); server.sendHeader("Location","/"); server.send(303); });
-  server.on("/stop", []() { 
-    systemStatus = "Stopped";
-    // Immediately stop motor output for safety
-    digitalWrite(motor1Pin1, LOW);
-    digitalWrite(motor1Pin2, LOW);
-    ledcWrite(pwmChannel, 0);
-    server.sendHeader("Location","/");
-    server.send(303); 
-  });
-  server.on("/boatDetected", []() { boatSensorState = "Detected"; server.sendHeader("Location","/"); server.send(303); });
-  server.on("/boatPassed",   []() { boatSensorState = "Clear";    server.sendHeader("Location","/"); server.send(303); });
+  server.on("/state", handleState);
+  server.on("/toggle", handleToggle);
+  server.on("/stop", handleStop);
+
+  // keep your direct routes too (optional but handy)
+  server.on("/open",  [](){ motorOpen();  server.send(200, "text/plain", "OPENING");  });
+  server.on("/close", [](){ motorClose(); server.send(200, "text/plain", "CLOSING"); });
+  server.on("/boatDetected", []() { boatSensorState = "Detected"; server.send(200, "text/plain", "Boat Detected"); });
+  server.on("/boatPassed",   []() { boatSensorState = "Clear";    server.send(200, "text/plain", "Boat Cleared");  });
 }
 
 /* =========================
@@ -199,7 +245,7 @@ void setupRoutes() {
 void setup() {
   Serial.begin(115200);
 
-  // Encoder (Channel A only)
+  // Encoder
   pinMode(ENCODER_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), onEncoderRise, RISING);
 
@@ -211,20 +257,20 @@ void setup() {
   ledcAttachPin(enable1Pin, pwmChannel);
 
   // Boat lights
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < NUM_SIDES; i++) {
     pinMode(boatRedPins[i], OUTPUT);
     pinMode(boatYellowPins[i], OUTPUT);
     pinMode(boatGreenPins[i], OUTPUT);
   }
 
   // Road lights
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < NUM_SIDES; i++) {
     pinMode(roadRedPins[i], OUTPUT);
     pinMode(roadYellowPins[i], OUTPUT);
     pinMode(roadGreenPins[i], OUTPUT);
   }
 
-  // Initial states: bridge Closed → road GREEN, boat RED
+  // Initial states
   setBoatLights(true,  false, false); // Boat RED
   setRoadLights(false, false, true);  // Road GREEN
 
@@ -236,8 +282,7 @@ void setup() {
 
   // Wi-Fi / HTTP
   WiFi.softAP(ssid, password);
-  Serial.print("AP IP: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
   setupRoutes();
   server.begin();
   Serial.println("HTTP server started");
